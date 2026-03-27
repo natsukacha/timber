@@ -1,13 +1,36 @@
-version: "3.9"
-
 services:
   jupyter:
-    build: .
+    build: ./jupyter
     container_name: ds_jupyter
     ports:
       - "8888:8888"
     volumes:
-      - ./data:/data
       - ./work:/work
+      - ./data:/data
     environment:
-      - JUPYTER_ENABLE_LAB=yes
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - mlflow
+
+  mlflow:
+    build: ./mlflow
+    container_name: ds_mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    container_name: ds_postgres
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: mlflow
+      POSTGRES_DB: mlflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
