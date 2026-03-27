@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir \
     lightgbm \
     xgboost \
     optuna \
-    polars
+    polars \
+    pyarrow
 
 # 作業ディレクトリ
 WORKDIR /work
