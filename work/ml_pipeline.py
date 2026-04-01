@@ -66,7 +66,8 @@ class MoisturePipeline:
             "learning_rate": 0.05,
             "num_leaves": 64,
             "min_data_in_leaf": 5,
-            "n_jobs": -1
+            "n_jobs": -1,
+            "verbosity": -1 
         }
 
         self.target_cols = ["含水率", "含水率_log"]
@@ -149,7 +150,7 @@ class MoisturePipeline:
 
         with mlflow.start_run():
 
-            # ===== ここが実務で効く =====
+            # ===== 対数変換をかける =====
             mlflow.log_param("species", self.species)
 
             # パラメータ
