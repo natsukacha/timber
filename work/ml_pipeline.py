@@ -7,17 +7,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.model_selection import KFold
 
 class FeatureEngineer:
-    def __init__(self, n_components=10):
+    def __init__(self,use_pca=False,n_components=10):
         self.base_cols = None
 
         # ★ ここが重要
         self.target_cols = ["含水率", "含水率_log"]
 
         self.scaler = StandardScaler()
-        self.pca = PCA(n_components=n_components)
+        self.use_pca = use_pca
+        self.pca = PCA(n_components=n_components) if use_pca else None
 
     def fit(self, df: pl.DataFrame):
         # ===== target完全除外 =====
@@ -30,7 +31,8 @@ class FeatureEngineer:
         X = df.select(self.base_cols).to_numpy()
         X = self.scaler.fit_transform(X)
 
-        self.pca.fit(X)
+        if self.use_pca:
+          self.pca.fit(X)
 
         return self
 
@@ -38,28 +40,28 @@ class FeatureEngineer:
         if self.base_cols is None:
             raise ValueError("fitが先に必要")
 
-        # ===== 列チェック =====
+        # 列チェック
         missing_cols = [c for c in self.base_cols if c not in df.columns]
         if missing_cols:
             raise ValueError(f"不足列: {missing_cols}")
 
         X = df.select(self.base_cols).to_numpy()
         X = self.scaler.transform(X)
-        X_pca = self.pca.transform(X)
 
-        pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
-        df_pca = pl.DataFrame(X_pca, schema=pca_cols)
+        if self.use_pca:
+            X_pca = self.pca.transform(X)
+            pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
+            df_pca = pl.DataFrame(X_pca, schema=pca_cols)
+            return df.with_columns(df_pca)
 
-        return df.with_columns(df_pca)
+        return df
     
 
 
 
 
 class MoisturePipeline:
-    def __init__(self, species: str, params=None):
-        self.species = species
-        
+    def __init__(self,params=None,use_pca=False):
 
         self.params = params or {
             "n_estimators": 100,
@@ -70,21 +72,22 @@ class MoisturePipeline:
             "verbosity": -1 
         }
 
-        self.target_cols = ["含水率", "含水率_log"]
+        self.fe = FeatureEngineer(use_pca=use_pca)
 
-        self.drop_cols = ["樹種", "sample number", 
-                          "species number"] + self.target_cols
+        self.target_cols = ["含水率"]
+
+        self.drop_cols = ["樹種", "sample number"] + self.target_cols
 
         self.model = None
-        self.feature_cols = None  # ← これが最重要
-        self.fe = FeatureEngineer()#calss feature engより追加
+        self.feature_cols = None  
+
 
     def fit(self, train_df: pl.DataFrame):
         # ===== 特徴量生成 =====
         self.fe.fit(train_df)
         train_df = self.fe.transform(train_df)
         # ===== 特徴量を確定 =====
-        cols_to_drop = [c for c in self.drop_cols if c in train_df.columns]
+        cols_to_drop = [c for c in self.drop_cols if c in train_df.columns]+["species number"]
 
         self.feature_cols = [
             c for c in train_df.columns if c not in cols_to_drop
@@ -146,13 +149,10 @@ class MoisturePipeline:
         実行管理（MLflow）
         """
         mlflow.set_tracking_uri("http://mlflow:5000")
-        mlflow.set_experiment(self.species)  # ← 種別ごとに分ける
 
         with mlflow.start_run():
 
-            # ===== 対数変換をかける =====
-            mlflow.log_param("species", self.species)
-
+            # ===== 対数変換をかける ====
             # パラメータ
             mlflow.log_params(self.params)
 
@@ -162,4 +162,15 @@ class MoisturePipeline:
 
             mlflow.lightgbm.log_model(self.model, "model")
 
-            print(f"[{self.species}] RMSE:", rmse)
+            print(f"RMSE:", rmse)
+
+
+import mlflow.pyfunc
+
+class FullPipelineModel(mlflow.pyfunc.PythonModel):
+
+    def __init__(self, pipe):
+        self.pipe = pipe
+
+    def predict(self, context, model_input):
+        return self.pipe.predict(model_input)
