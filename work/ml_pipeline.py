@@ -10,42 +10,65 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 
 class FeatureEngineer:
-    def __init__(self,use_pca=False,n_components=10):
+    def __init__(self,use_diff=False,use_pca=False,n_components=10):
         self.base_cols = None
 
         # ★ ここが重要
         self.target_cols = ["含水率", "含水率_log"]
 
         self.scaler = StandardScaler()
+        self.use_diff = use_diff
         self.use_pca = use_pca
         self.pca = PCA(n_components=n_components) if use_pca else None
 
-    def fit(self, df: pl.DataFrame):
-        # ===== target完全除外 =====
+    def fit(self, df):
         self.base_cols = [
             c for c in df.columns
             if df[c].dtype in (pl.Float64, pl.Int64)
             and c not in self.target_cols
         ]
 
-        X = df.select(self.base_cols).to_numpy()
+        if self.use_diff:
+            df = self._add_diff(df)
+
+        # base_cols更新（重要）
+        self.base_cols = [
+            c for c in df.columns
+            if c not in self.target_cols
+            and df[c].dtype in (pl.Float64, pl.Int64)
+        ]
+
+        X = df.select(self.base_cols).to_numpy().astype("float32")
         X = self.scaler.fit_transform(X)
 
         if self.use_pca:
-          self.pca.fit(X)
+            self.pca.fit(X)
 
         return self
+    
+    def add_diff(self, df: pl.DataFrame):
+        cols = self.base_cols
+
+        diff_exprs = [
+            (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
+            for i in range(len(cols) - 1)
+        ]
+
+        return df.with_columns(diff_exprs)
+
 
     def transform(self, df: pl.DataFrame):
         if self.base_cols is None:
             raise ValueError("fitが先に必要")
+        
+        df = self.add_diff(df)
 
         # 列チェック
         missing_cols = [c for c in self.base_cols if c not in df.columns]
         if missing_cols:
             raise ValueError(f"不足列: {missing_cols}")
 
-        X = df.select(self.base_cols).to_numpy()
+        X = df.select(self.base_cols).to_numpy().astype("float32")
         X = self.scaler.transform(X)
 
         if self.use_pca:
@@ -61,7 +84,7 @@ class FeatureEngineer:
 
 
 class MoisturePipeline:
-    def __init__(self,params=None,use_pca=False):
+    def __init__(self,params=None,use_diff=False,use_pca=False):
 
         self.params = params or {
             "n_estimators": 100,
@@ -80,7 +103,7 @@ class MoisturePipeline:
 
         self.model = None
         self.feature_cols = None  
-
+    
 
     def fit(self, train_df: pl.DataFrame):
         # ===== 特徴量生成 =====
@@ -94,7 +117,7 @@ class MoisturePipeline:
         ]
 
                 # ===== X =====
-        X = train_df.select(self.feature_cols).to_numpy()
+        X = train_df.select(self.feature_cols).to_numpy().astype("float32")
 
         # ===== y（log変換）=====
         y_raw = train_df["含水率"].to_numpy()
@@ -126,7 +149,7 @@ class MoisturePipeline:
         if missing_cols:
             raise ValueError(f"testに不足している列: {missing_cols}")
 
-        return df.select(self.feature_cols).to_numpy()
+        return df.select(self.feature_cols).to_numpy().astype("float32")
 
     def predict(self, test_df: pl.DataFrame):
         # ===== testにtargetが混入していたらエラー =====
