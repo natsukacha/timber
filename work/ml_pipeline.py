@@ -29,7 +29,8 @@ class FeatureEngineer:
         ]
 
         if self.use_diff:
-            df = self._add_diff(df)
+            df = self.add_diff(df)
+            df = self.add_diff2(df) 
 
         # base_cols更新（重要）
         self.base_cols = [
@@ -49,12 +50,44 @@ class FeatureEngineer:
     def add_diff(self, df: pl.DataFrame):
         cols = self.base_cols
 
+        # ===== 次微分（1次diffから作る）=====
         diff_exprs = [
             (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
             for i in range(len(cols) - 1)
         ]
 
-        return df.with_columns(diff_exprs)
+        df = df.with_columns(diff_exprs)
+
+        # ===== 2次微分（1次diffから作る）=====
+        diff_cols = [f"{cols[i+1]}_diff" for i in range(len(cols) - 1)]
+
+        diff_diff_exprs = [
+            (pl.col(diff_cols[i+1]) - pl.col(diff_cols[i])).alias(f"{diff_cols[i+1]}_diff2")
+            for i in range(len(diff_cols) - 1)
+        ]
+
+        df = df.with_columns(diff_diff_exprs)
+        self.diff_cols = [f"{cols[i+1]}_diff" for i in range(len(cols) - 1)]
+
+        return df
+    
+    def add_diff2(self, df: pl.DataFrame):
+        if not hasattr(self, "diff_cols"):
+            raise ValueError("先にadd_diffを実行してください")
+
+        diff_cols = self.diff_cols
+
+        diff2_exprs = [
+            (pl.col(diff_cols[i+1]) - pl.col(diff_cols[i])).alias(f"{diff_cols[i+1]}_diff2")
+            for i in range(len(diff_cols) - 1)
+        ]
+
+        df = df.with_columns(diff2_exprs)
+
+        # ★ 追加：2次微分列を記録
+        self.diff2_cols = [f"{diff_cols[i+1]}_diff2" for i in range(len(diff_cols) - 1)]
+
+        return df
 
 
     def transform(self, df: pl.DataFrame):
@@ -62,6 +95,7 @@ class FeatureEngineer:
             raise ValueError("fitが先に必要")
         
         df = self.add_diff(df)
+        df = self.add_diff2(df)
 
         # 列チェック
         missing_cols = [c for c in self.base_cols if c not in df.columns]
