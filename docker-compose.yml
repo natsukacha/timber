@@ -1,6 +1,8 @@
 services:
   jupyter:
-    build: ./jupyter
+    build:
+      context: .
+      dockerfile: jupyter/Dockerfile
     container_name: ds_jupyter
     ports:
       - "8888:8888"
@@ -13,7 +15,9 @@ services:
       - mlflow
 
   mlflow:
-    build: ./mlflow
+    build:
+      context: .
+      dockerfile: mlflow/Dockerfile
     container_name: ds_mlflow
     ports:
       - "5000:5000"

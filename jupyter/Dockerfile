@@ -8,28 +8,17 @@ RUN apt-get update && apt-get install -y \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# Pythonパッケージ
-RUN python -m pip install --no-cache-dir \
-    jupyterlab \
-    ipywidgets \
-    tqdm \
-    numpy \
-    pandas \
-    matplotlib \
-    seaborn \
-    scikit-learn \
-    lightgbm \
-    xgboost \
-    optuna \
-    polars \
-    pyarrow \
-    mlflow
-
-# 作業ディレクトリ
 WORKDIR /work
 
-# ポート
+COPY requirements.txt .
+
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Pythonパッケージ
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
 EXPOSE 8888
 
-# Jupyter起動（tokenなし）
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--ServerApp.token="]
