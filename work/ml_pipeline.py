@@ -12,6 +12,9 @@ from sklearn.model_selection import KFold
 class FeatureEngineer:
     def __init__(self,use_diff=False,use_pca=False,n_components=10):
         self.base_cols = None
+        self.first_diff_cols = None
+        self.second_diff_cols = None
+        self.history =[]
 
         # ★ ここが重要
         self.target_cols = ["含水率", "含水率_log"]
@@ -29,15 +32,18 @@ class FeatureEngineer:
         ]
 
         if self.use_diff:
-            df = self.add_diff(df)
-            df = self.add_diff2(df) 
+            df_0 = self.add_diff(df)
+            df = self.add_diff2(df_0) 
 
         # base_cols更新（重要）
-        self.base_cols = [
-            c for c in df.columns
-            if c not in self.target_cols
-            and df[c].dtype in (pl.Float64, pl.Int64)
-        ]
+        #self.base_cols = [
+        #    c for c in df.columns
+        #    if c not in self.target_cols
+        #    and df[c].dtype in (pl.Float64, pl.Int64)
+        #]
+        self.base_cols = df.select(pl.col(pl.Float64, pl.Int64)).columns
+        
+
 
         X = df.select(self.base_cols).to_numpy().astype("float32")
         X = self.scaler.fit_transform(X)
@@ -48,7 +54,8 @@ class FeatureEngineer:
         return self
     
     def add_diff(self, df: pl.DataFrame):
-        cols = self.base_cols
+        new_cols = [...]
+        cols = self.base_cols.copy()
 
         # ===== 次微分（1次diffから作る）=====
         diff_exprs = [
@@ -69,9 +76,16 @@ class FeatureEngineer:
         df = df.with_columns(diff_diff_exprs)
         self.diff_cols = [f"{cols[i+1]}_diff" for i in range(len(cols) - 1)]
 
+        self.history.append({
+            "type": "diff1",
+            "input_cols": cols,
+            "output_cols": self.diff_cols,
+        })
+
         return df
     
     def add_diff2(self, df: pl.DataFrame):
+        new_cols = [...]
         if not hasattr(self, "diff_cols"):
             raise ValueError("先にadd_diffを実行してください")
 
@@ -87,6 +101,12 @@ class FeatureEngineer:
         # ★ 追加：2次微分列を記録
         self.diff2_cols = [f"{diff_cols[i+1]}_diff2" for i in range(len(diff_cols) - 1)]
 
+        self.history.append({
+            "type": "diff2",
+            "input_cols": self.diff_cols,
+            "output_cols": self.diff2_cols,
+        })
+
         return df
 
 
@@ -94,8 +114,8 @@ class FeatureEngineer:
         if self.base_cols is None:
             raise ValueError("fitが先に必要")
         
-        df = self.add_diff(df)
-        df = self.add_diff2(df)
+        #df = self.add_diff(df)
+        #df = self.add_diff2(df)
 
         # 列チェック
         missing_cols = [c for c in self.base_cols if c not in df.columns]
@@ -110,6 +130,7 @@ class FeatureEngineer:
             pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
             df_pca = pl.DataFrame(X_pca, schema=pca_cols)
             return df.with_columns(df_pca)
+        
 
         return df
     
