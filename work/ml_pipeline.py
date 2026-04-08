@@ -1,5 +1,6 @@
 import polars as pl
 import numpy as np
+import shap
 import mlflow
 import mlflow.lightgbm
 from lightgbm import LGBMRegressor
@@ -114,8 +115,9 @@ class FeatureEngineer:
         if self.base_cols is None:
             raise ValueError("fitが先に必要")
         
-        #df = self.add_diff(df)
-        #df = self.add_diff2(df)
+        if self.use_diff:
+            df = self.add_diff(df)
+            df = self.add_diff2(df)
 
         # 列チェック
         missing_cols = [c for c in self.base_cols if c not in df.columns]
@@ -134,6 +136,35 @@ class FeatureEngineer:
 
         return df
     
+
+    def show_shap(self, df: pl.DataFrame, model, max_display=20):
+        import shap
+        import pandas as pd
+        import numpy as np
+
+        # ===== transform（fit済み前提）=====
+        df_transformed = self.transform(df)
+
+        # ===== 数値列だけ取得 =====
+        X = df_transformed.select(self.base_cols).to_numpy().astype("float32")
+
+        # ===== SHAP =====
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+
+        # ===== DataFrame化 =====
+        shap_df = pd.DataFrame(shap_values, columns=self.base_cols)
+
+        # ===== 可視化（summary）=====
+        shap.summary_plot(shap_values, X, feature_names=self.base_cols, max_display=max_display)
+
+        # ===== 平均寄与度 =====
+        importance = shap_df.abs().mean().sort_values(ascending=False)
+
+        print("\n=== SHAP importance ===")
+        print(importance.head(max_display))
+
+        return importance
 
 
 
