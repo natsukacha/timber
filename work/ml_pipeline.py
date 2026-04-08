@@ -26,25 +26,31 @@ class FeatureEngineer:
         self.pca = PCA(n_components=n_components) if use_pca else None
 
     def fit(self, df):
-        self.base_cols = [
+        self.original_base_cols = [
             c for c in df.columns
             if df[c].dtype in (pl.Float64, pl.Int64)
             and c not in self.target_cols
         ]
 
-        if self.use_diff:
-            df_0 = self.add_diff(df)
-            df = self.add_diff2(df_0) 
-
-        # base_cols更新（重要）
+        #del
         #self.base_cols = [
         #    c for c in df.columns
-        #    if c not in self.target_cols
-        #    and df[c].dtype in (pl.Float64, pl.Int64)
+        #    if df[c].dtype in (pl.Float64, pl.Int64)
+        #    and c not in self.target_cols
         #]
-        self.base_cols = df.select(pl.col(pl.Float64, pl.Int64)).columns
-        
 
+ 
+        if self.use_diff:
+            df = self.add_diff(df)
+            df = self.add_diff2(df)
+
+        # 最終特徴量
+        ## self.base_cols = df.select(pl.col(pl.Float64, pl.Int64)).columns
+        self.base_cols = (
+            self.original_base_cols
+            + self.first_diff_cols
+            + self.second_diff_cols
+        )
 
         X = df.select(self.base_cols).to_numpy().astype("float32")
         X = self.scaler.fit_transform(X)
@@ -55,10 +61,8 @@ class FeatureEngineer:
         return self
     
     def add_diff(self, df: pl.DataFrame):
-        new_cols = [...]
-        cols = self.base_cols.copy()
+        cols = self.original_base_cols  # ← ★ここが重要
 
-        # ===== 次微分（1次diffから作る）=====
         diff_exprs = [
             (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
             for i in range(len(cols) - 1)
@@ -66,49 +70,42 @@ class FeatureEngineer:
 
         df = df.with_columns(diff_exprs)
 
-        # ===== 2次微分（1次diffから作る）=====
-        diff_cols = [f"{cols[i+1]}_diff" for i in range(len(cols) - 1)]
-
-        diff_diff_exprs = [
-            (pl.col(diff_cols[i+1]) - pl.col(diff_cols[i])).alias(f"{diff_cols[i+1]}_diff2")
-            for i in range(len(diff_cols) - 1)
+        self.first_diff_cols = [
+            f"{cols[i+1]}_diff" for i in range(len(cols) - 1)
         ]
-
-        df = df.with_columns(diff_diff_exprs)
-        self.diff_cols = [f"{cols[i+1]}_diff" for i in range(len(cols) - 1)]
 
         self.history.append({
             "type": "diff1",
             "input_cols": cols,
-            "output_cols": self.diff_cols,
+            "output_cols": self.first_diff_cols,
         })
 
         return df
     
-    def add_diff2(self, df: pl.DataFrame):
-        new_cols = [...]
-        if not hasattr(self, "diff_cols"):
-            raise ValueError("先にadd_diffを実行してください")
 
-        diff_cols = self.diff_cols
+
+    def add_diff2(self, df: pl.DataFrame):
+        cols = self.first_diff_cols  # ← ★ここも重要
 
         diff2_exprs = [
-            (pl.col(diff_cols[i+1]) - pl.col(diff_cols[i])).alias(f"{diff_cols[i+1]}_diff2")
-            for i in range(len(diff_cols) - 1)
+            (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff2")
+            for i in range(len(cols) - 1)
         ]
 
         df = df.with_columns(diff2_exprs)
 
-        # ★ 追加：2次微分列を記録
-        self.diff2_cols = [f"{diff_cols[i+1]}_diff2" for i in range(len(diff_cols) - 1)]
+        self.second_diff_cols = [
+            f"{cols[i+1]}_diff2" for i in range(len(cols) - 1)
+        ]
 
         self.history.append({
             "type": "diff2",
-            "input_cols": self.diff_cols,
-            "output_cols": self.diff2_cols,
+            "input_cols": cols,
+            "output_cols": self.second_diff_cols,
         })
 
         return df
+
 
 
     def transform(self, df: pl.DataFrame):
