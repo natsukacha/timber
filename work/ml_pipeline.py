@@ -13,11 +13,11 @@ from sklearn.model_selection import KFold
 class FeatureEngineer:
     def __init__(self,use_diff=False,use_pca=False,n_components=10):
         self.base_cols = None
-        self.first_diff_cols = None
-        self.second_diff_cols = None
+        self.first_diff_cols = []
+        self.second_diff_cols = []
+        self.feature_cols=[]
         self.history =[]
 
-        # ★ ここが重要
         self.target_cols = ["含水率", "含水率_log"]
 
         self.scaler = StandardScaler()
@@ -31,28 +31,18 @@ class FeatureEngineer:
             if df[c].dtype in (pl.Float64, pl.Int64)
             and c not in self.target_cols
         ]
-
-        #del
-        #self.base_cols = [
-        #    c for c in df.columns
-        #    if df[c].dtype in (pl.Float64, pl.Int64)
-        #    and c not in self.target_cols
-        #]
-
  
         if self.use_diff:
-            df = self.add_diff(df)
-            df = self.add_diff2(df)
+            df_tmp = self.add_diff_from_original(df)
+            df = self.add_diff2_from_original(df_tmp)
 
-        # 最終特徴量
-        ## self.base_cols = df.select(pl.col(pl.Float64, pl.Int64)).columns
-        self.base_cols = (
+        self.feature_cols = (
             self.original_base_cols
             + self.first_diff_cols
             + self.second_diff_cols
         )
 
-        X = df.select(self.base_cols).to_numpy().astype("float32")
+        X = df.select(self.feature_cols).to_numpy().astype("float32")
         X = self.scaler.fit_transform(X)
 
         if self.use_pca:
@@ -60,31 +50,37 @@ class FeatureEngineer:
 
         return self
     
-    def add_diff(self, df: pl.DataFrame):
-        cols = self.original_base_cols  # ← ★ここが重要
+    def add_diff_from_original(self, df: pl.DataFrame):
+        if self.first_diff_cols:
+            pass
+        else:
+            cols = self.original_base_cols  # ← ★ここが重要
 
-        diff_exprs = [
-            (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
-            for i in range(len(cols) - 1)
-        ]
+            diff_exprs = [
+                (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
+                for i in range(len(cols) - 1)
+            ]
 
-        df = df.with_columns(diff_exprs)
+            df = df.with_columns(diff_exprs)
 
-        self.first_diff_cols = [
-            f"{cols[i+1]}_diff" for i in range(len(cols) - 1)
-        ]
+            self.first_diff_cols = [
+                f"{cols[i+1]}_diff" for i in range(len(cols) - 1)
+            ]
 
-        self.history.append({
-            "type": "diff1",
-            "input_cols": cols,
-            "output_cols": self.first_diff_cols,
-        })
+            self.history.append({
+                "type": "diff1",
+                "input_cols": cols,
+                "output_cols": self.first_diff_cols,
+            })
 
         return df
     
 
 
-    def add_diff2(self, df: pl.DataFrame):
+    def add_diff2_from_original(self, df: pl.DataFrame):
+        if self.second_diff_cols:
+            pass
+
         cols = self.first_diff_cols  # ← ★ここも重要
 
         diff2_exprs = [
@@ -109,26 +105,25 @@ class FeatureEngineer:
 
 
     def transform(self, df: pl.DataFrame):
-        if self.base_cols is None:
+        if self.feature_cols is None:
             raise ValueError("fitが先に必要")
         
-        if self.use_diff:
-            df = self.add_diff(df)
-            df = self.add_diff2(df)
+        self.add_diff_from_original(df)
+        self.add_diff2_from_original(df)
 
         # 列チェック
-        missing_cols = [c for c in self.base_cols if c not in df.columns]
+        missing_cols = [c for c in self.feature_cols if c not in df.columns]
         if missing_cols:
             raise ValueError(f"不足列: {missing_cols}")
 
-        X = df.select(self.base_cols).to_numpy().astype("float32")
+        X = df.select(self.feature_cols).to_numpy().astype("float32")
         X = self.scaler.transform(X)
 
-        if self.use_pca:
-            X_pca = self.pca.transform(X)
-            pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
-            df_pca = pl.DataFrame(X_pca, schema=pca_cols)
-            return df.with_columns(df_pca)
+        #if self.use_pca:
+        #    X_pca = self.pca.transform(X)
+        #    pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
+        #    df_pca = pl.DataFrame(X_pca, schema=pca_cols)
+        #    return df.with_columns(df_pca)
         
 
         return df
@@ -143,17 +138,17 @@ class FeatureEngineer:
         df_transformed = self.transform(df)
 
         # ===== 数値列だけ取得 =====
-        X = df_transformed.select(self.base_cols).to_numpy().astype("float32")
+        X = df_transformed.select(self.feature_cols).to_numpy().astype("float32")
 
         # ===== SHAP =====
         explainer = shap.TreeExplainer(model)
         shap_values = explainer.shap_values(X)
 
         # ===== DataFrame化 =====
-        shap_df = pd.DataFrame(shap_values, columns=self.base_cols)
+        shap_df = pd.DataFrame(shap_values, columns=self.feature_cols)
 
         # ===== 可視化（summary）=====
-        shap.summary_plot(shap_values, X, feature_names=self.base_cols, max_display=max_display)
+        shap.summary_plot(shap_values, X, feature_names=self.feature_cols, max_display=max_display)
 
         # ===== 平均寄与度 =====
         importance = shap_df.abs().mean().sort_values(ascending=False)
