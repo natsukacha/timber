@@ -31,10 +31,19 @@ class FeatureEngineer:
             if df[c].dtype in (pl.Float64, pl.Int64)
             and c not in self.target_cols
         ]
- 
+
         if self.use_diff:
-            df_tmp = self.add_diff_from_original(df)
-            df = self.add_diff2_from_original(df_tmp)
+            self.first_diff_cols = [
+                f"{self.original_base_cols[i+1]}_diff"
+                for i in range(len(self.original_base_cols) - 1)
+            ]
+
+            self.second_diff_cols = [
+                f"{self.first_diff_cols[i+1]}_diff2"
+                for i in range(len(self.first_diff_cols) - 1)
+            ]
+
+            df = self._apply_diff(df)
 
         self.feature_cols = (
             self.original_base_cols
@@ -49,67 +58,31 @@ class FeatureEngineer:
             self.pca.fit(X)
 
         return self
-    
-    def add_diff_from_original(self, df: pl.DataFrame):
-        if self.first_diff_cols:
-            pass
-        else:
-            cols = self.original_base_cols  # ← ★ここが重要
 
-            diff_exprs = [
-                (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff")
-                for i in range(len(cols) - 1)
-            ]
+    def _apply_diff(self, df: pl.DataFrame):
+        # 1次微分
+        df = df.with_columns([
+            (pl.col(self.original_base_cols[i+1]) - pl.col(self.original_base_cols[i]))
+            .alias(self.first_diff_cols[i])
+            for i in range(len(self.original_base_cols) - 1)
+        ])
 
-            df = df.with_columns(diff_exprs)
-
-            self.first_diff_cols = [
-                f"{cols[i+1]}_diff" for i in range(len(cols) - 1)
-            ]
-
-            self.history.append({
-                "type": "diff1",
-                "input_cols": cols,
-                "output_cols": self.first_diff_cols,
-            })
+        # 2次微分
+        df = df.with_columns([
+            (pl.col(self.first_diff_cols[i+1]) - pl.col(self.first_diff_cols[i]))
+            .alias(self.second_diff_cols[i])
+            for i in range(len(self.first_diff_cols) - 1)
+        ])
 
         return df
-    
-
-
-    def add_diff2_from_original(self, df: pl.DataFrame):
-        if self.second_diff_cols:
-            pass
-
-        cols = self.first_diff_cols  # ← ★ここも重要
-
-        diff2_exprs = [
-            (pl.col(cols[i+1]) - pl.col(cols[i])).alias(f"{cols[i+1]}_diff2")
-            for i in range(len(cols) - 1)
-        ]
-
-        df = df.with_columns(diff2_exprs)
-
-        self.second_diff_cols = [
-            f"{cols[i+1]}_diff2" for i in range(len(cols) - 1)
-        ]
-
-        self.history.append({
-            "type": "diff2",
-            "input_cols": cols,
-            "output_cols": self.second_diff_cols,
-        })
-
-        return df
-
 
 
     def transform(self, df: pl.DataFrame):
         if self.feature_cols is None:
             raise ValueError("fitが先に必要")
         
-        self.add_diff_from_original(df)
-        self.add_diff2_from_original(df)
+        if self.use_diff:
+            df = self._apply_diff(df)
 
         # 列チェック
         missing_cols = [c for c in self.feature_cols if c not in df.columns]
@@ -129,7 +102,7 @@ class FeatureEngineer:
         return df
     
 
-    def show_shap(self, df: pl.DataFrame, model, max_display=20):
+    def show_shap(self, df: pl.DataFrame, model,feature_cols, max_display=20):
         import shap
         import pandas as pd
         import numpy as np
@@ -138,7 +111,7 @@ class FeatureEngineer:
         df_transformed = self.transform(df)
 
         # ===== 数値列だけ取得 =====
-        X = df_transformed.select(self.feature_cols).to_numpy().astype("float32")
+        X = df_transformed.select(feature_cols).to_numpy().astype("float32")
 
         # ===== SHAP =====
         explainer = shap.TreeExplainer(model)
@@ -148,7 +121,7 @@ class FeatureEngineer:
         shap_df = pd.DataFrame(shap_values, columns=self.feature_cols)
 
         # ===== 可視化（summary）=====
-        shap.summary_plot(shap_values, X, feature_names=self.feature_cols, max_display=max_display)
+        shap.summary_plot(shap_values, X, solmuns=feature_cols)
 
         # ===== 平均寄与度 =====
         importance = shap_df.abs().mean().sort_values(ascending=False)
