@@ -1,0 +1,13 @@
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ds_mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+      
+#    depends_on:
+#      - db
