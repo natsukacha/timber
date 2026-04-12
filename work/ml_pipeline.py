@@ -82,7 +82,9 @@ class FeatureEngineer:
             raise ValueError("fitが先に必要")
         
         if self.use_diff:
-            df = self._apply_diff(df)
+            #diffの2重生成を防ぐ
+            if not any(c in df.columns for c in self.first_diff_cols):
+                df = self._apply_diff(df)
 
         # 列チェック
         missing_cols = [c for c in self.feature_cols if c not in df.columns]
@@ -118,10 +120,10 @@ class FeatureEngineer:
         shap_values = explainer.shap_values(X)
 
         # ===== DataFrame化 =====
-        shap_df = pd.DataFrame(shap_values, columns=self.feature_cols)
+        shap_df = pd.DataFrame(shap_values, columns=feature_cols)
 
         # ===== 可視化（summary）=====
-        shap.summary_plot(shap_values, X, solmuns=feature_cols)
+        shap.summary_plot(shap_values, X, feature_names=feature_cols)
 
         # ===== 平均寄与度 =====
         importance = shap_df.abs().mean().sort_values(ascending=False)
