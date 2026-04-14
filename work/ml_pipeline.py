@@ -49,7 +49,6 @@ class FeatureEngineer:
             df = self._apply_diff(df)
 
         if self.use_conv:
-            self.one_demention_conv=[]
             df = self.one_demention_conv(df)
 
         # 例：SHAPから決めた中心波長
@@ -81,11 +80,19 @@ class FeatureEngineer:
 
     def _apply_diff(self, df: pl.DataFrame):
         # 1次微分
+        diff_cols = [
+            f"{self.original_base_cols[i+1]}_diff"
+            for i in range(len(self.original_base_cols) - 1)
+        ]
+            
         df = df.with_columns([
             (pl.col(self.original_base_cols[i+1]) - pl.col(self.original_base_cols[i]))
             .alias(self.first_diff_cols[i])
             for i in range(len(self.original_base_cols) - 1)
         ])
+
+        self.first_diff_cols = diff_cols
+
 
         # 2次微分
         #df = df.with_columns([
@@ -255,7 +262,15 @@ class FeatureEngineer:
         print("\n=== SHAP importance ===")
         print(importance.head(max_display))
 
-        return importance
+        # ===== DataFrameとして整形 =====
+        importance_df = (
+            importance
+            .reset_index()
+            .rename(columns={"index": "feature", 0: "importance"})
+            .sort_values("importance", ascending=False)
+        )
+
+        return importance_df
 
 
 
