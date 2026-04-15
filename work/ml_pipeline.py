@@ -172,7 +172,6 @@ class FeatureEngineer:
         pool = nn.AdaptiveAvgPool1d(50)
         out = pool(out).numpy()
 
-        out = out.numpy()
 
         # ===== flattenして特徴量化 =====
         N, C, L = out.shape
@@ -288,7 +287,8 @@ class MoisturePipeline:
             "verbosity": -1 
         }
 
-        self.fe = FeatureEngineer(use_pca=use_pca)
+        self.fe = FeatureEngineer(use_diff=use_diff,
+            use_conv=use_conv,use_band=use_band,use_pca=use_pca)
 
         self.target_cols = ["含水率"]
 
