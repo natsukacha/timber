@@ -28,7 +28,8 @@ class FeatureEngineer:
         self.scaler = StandardScaler()
         self.use_diff = use_diff
         self.use_conv = use_conv
-        self.use_pca = use_pca
+        self.use_pca  = use_pca
+        self.use_band = use_band
         self.pca = PCA(n_components=n_components) if use_pca else None
 
     def fit(self, df):
@@ -205,16 +206,13 @@ class FeatureEngineer:
         
         if self.use_diff:
             #diffの2重生成を防ぐ
-            if not any(c in df.columns for c in self.first_diff_cols):
-                df = self._apply_diff(df)
+            df = self._apply_diff(df)
 
         if self.use_conv:
-            if not any(c in df.columns for c in self.one_demention_conv_cols):
-                df = self.one_demention_conv(df)
+            df = self.one_demention_conv(df)
 
-        if hasattr(self, "band_feature") and len(self.band_feature) > 0:
-            if not any(c in df.columns for c in self.band_feature):
-                df = self._apply_band_feature(df)
+        if self.use_band:
+            df = self._apply_band_feature(df)
 
         # 列チェック
         missing_cols = [c for c in self.feature_cols if c not in df.columns]
@@ -277,6 +275,10 @@ class FeatureEngineer:
 class MoisturePipeline:
     def __init__(self,params=None,use_diff=False,use_pca=False,
     use_conv=False,use_band=False):
+        self.use_diff = use_diff
+        self.use_conv = use_conv
+        self.use_band = use_band  
+        self.use_pca = use_pca
 
         self.params = params or {
             "n_estimators": 100,
@@ -305,11 +307,9 @@ class MoisturePipeline:
         # ===== 特徴量を確定 =====
         cols_to_drop = [c for c in self.drop_cols if c in train_df.columns]+["species number"]
 
-        self.feature_cols = [
-            c for c in train_df.columns if c not in cols_to_drop
-        ]
+        self.feature_cols = self.fe.feature_cols
 
-                # ===== X =====
+        # ===== X =====
         X = train_df.select(self.feature_cols).to_numpy().astype("float32")
 
         # ===== y（log変換）=====
