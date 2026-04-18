@@ -53,13 +53,15 @@ class FeatureEngineer:
             df = self.one_demention_conv(df)
 
         # 例：SHAPから決めた中心波長
-        self.band_centers = [7500, 4700, 10000]
+        if self.use_band:
+            self.band_centers = [7500, 4700, 10000]
 
-        self.col_to_wavelength = {
-           c: float(c) for c in self.original_base_cols
-        }
-
-        df = self._apply_band_feature(df)
+            self.col_to_wavelength = {
+               c: float(c) for c in self.original_base_cols
+            }
+            df = self._apply_band_feature(df)
+        else:
+            self.band_feature=[]
 
 
 
