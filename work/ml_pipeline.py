@@ -15,10 +15,12 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 
+from scipy.signal import savgol_filter
+
 
 class FeatureEngineer:
     def __init__(self,use_diff=False,use_conv=False,use_band=False,
-                 use_pca=False,n_components=10):
+                 use_pca=False,use_sg=False,n_components=10):
         self.base_cols = None
         self.first_diff_cols = []
         self.second_diff_cols = []
@@ -26,6 +28,7 @@ class FeatureEngineer:
         self.band_centers=[]
         self.one_demention_conv_cols = []
         self.feature_cols=[]
+        self.sg_feature_cols=[]
         self.history =[]
 
         self.target_cols = ["含水率", "含水率_log"]
@@ -36,6 +39,7 @@ class FeatureEngineer:
         self.use_conv = use_conv
         self.use_pca  = use_pca
         self.use_band = use_band
+        self.use_sg = use_sg
         self.pca = PCA(n_components=n_components) if use_pca else None
 
     def fit(self, df):
@@ -69,6 +73,10 @@ class FeatureEngineer:
         else:
             self.band_feature=[]
 
+        if self.use_sg:
+          df = self.apply_sg(df)
+        
+
 
 
 
@@ -77,6 +85,7 @@ class FeatureEngineer:
             + self.first_diff_cols
             + self.one_demention_conv_cols
             + self.band_feature
+            + self.sg_feature_cols
         )
 
         X = df.select(self.feature_cols).to_numpy().astype("float32")
@@ -111,7 +120,32 @@ class FeatureEngineer:
         #])
 
         return df
+
     
+
+    def apply_sg(self, df, window=11, poly=2, deriv=1):
+        X = df.select(self.original_base_cols).to_numpy()
+
+        X_sg = savgol_filter(
+            X,
+            window_length=window,
+            polyorder=poly,
+            deriv=deriv,
+            axis=1
+        )
+
+        sg_cols = [f"{c}_sg" for c in self.original_base_cols]
+
+        sg_df = pl.DataFrame(X_sg, schema=sg_cols)
+
+        self.sg_cols = sg_cols
+
+        df = pl.concat([df, sg_df], how="horizontal")
+
+        return df
+    
+
+
     def _apply_band_feature(self, df: pl.DataFrame, width=50):
         band_cols = []
 
@@ -219,6 +253,9 @@ class FeatureEngineer:
         if self.use_band:
             df = self._apply_band_feature(df)
 
+        if self.use_sg:
+            df = self.apply_sg(df)
+
         # 列チェック
         missing_cols = [c for c in self.feature_cols if c not in df.columns]
         if missing_cols:
@@ -279,11 +316,13 @@ class FeatureEngineer:
 
 class MoisturePipeline:
     def __init__(self,params=None,use_diff=False,use_pca=False,
-    use_conv=False,use_band=False):
+    use_conv=False,use_band=False,use_sg=False):
         self.use_diff = use_diff
         self.use_conv = use_conv
         self.use_band = use_band  
         self.use_pca = use_pca
+        self.use_sg = use_sg
+
 
         self.params = params or {
             "n_estimators": 100,
@@ -295,7 +334,7 @@ class MoisturePipeline:
         }
 
         self.fe = FeatureEngineer(use_diff=use_diff,
-            use_conv=use_conv,use_band=use_band,use_pca=use_pca)
+            use_conv=use_conv,use_band=use_band,use_sg=use_sg,use_pca=use_pca)
 
         self.target_cols = ["含水率"]
 
