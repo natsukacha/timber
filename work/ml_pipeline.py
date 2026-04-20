@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 
-#import shap
+import shap
 import mlflow
 import mlflow.lightgbm
 from lightgbm import LGBMRegressor
@@ -151,7 +151,7 @@ class FeatureEngineer:
         # ===== 固定Conv定義（smoothing + 微分っぽい）=====
         conv = nn.Conv1d(
             in_channels=1,
-            out_channels=4,   # フィルタ数
+            out_channels=1,   # フィルタ数
             kernel_size=5,
             padding=2,
             bias=False
@@ -160,10 +160,10 @@ class FeatureEngineer:
         # ===== カーネルを手動設定（ここがキモ）=====
         with torch.no_grad():
             kernels = np.array([
-                [1, 2, 3, 2, 1],     # smoothing
-                [-1, -2, 0, 2, 1],   # 1次微分風
-                [1, -2, 0, -2, 1],   # 2次微分風
-                [-1, 0, 2, 0, -1],   # エッジ強調
+                [1, 2, 3, 4, 3, 2, 1],     # smoothing
+                #[-1, -2, 0, 2, 1],   # 1次微分風
+                #[1, -2, 0, -2, 1],   # 2次微分風
+                #[-1, 0, 2, 0, -1],   # エッジ強調
             ], dtype=np.float32)
 
             kernels = kernels[:, None, :]  # (out, in, k)
@@ -173,7 +173,7 @@ class FeatureEngineer:
 
         # ===== 畳み込み =====
         with torch.no_grad():
-            out = conv(X_tensor)  # (N, 4, L)
+            out = conv(X_tensor)  # (N, 4, L) -> (N, 1, L)
 
         pool = nn.AdaptiveAvgPool1d(50)
         out = pool(out).numpy()
@@ -227,11 +227,11 @@ class FeatureEngineer:
         X = df.select(self.feature_cols).to_numpy().astype("float32")
         X = self.scaler.transform(X)
 
-        #if self.use_pca:
-        #    X_pca = self.pca.transform(X)
-        #    pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
-        #    df_pca = pl.DataFrame(X_pca, schema=pca_cols)
-        #    return df.with_columns(df_pca)
+        if self.use_pca:
+            X_pca = self.pca.transform(X)[:, :3]
+            pca_cols = [f"pca_{i}" for i in range(X_pca.shape[1])]
+            df_pca = pl.DataFrame(X_pca, schema=pca_cols)
+            return df.with_columns(df_pca)
         
 
         return df
