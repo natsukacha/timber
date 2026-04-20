@@ -1,6 +1,11 @@
 import polars as pl
 import numpy as np
-import shap
+
+import torch
+import torch.nn as nn
+
+
+#import shap
 import mlflow
 import mlflow.lightgbm
 from lightgbm import LGBMRegressor
@@ -9,6 +14,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
+
 
 class FeatureEngineer:
     def __init__(self,use_diff=False,use_conv=False,use_band=False,
@@ -133,10 +139,7 @@ class FeatureEngineer:
 
 
     def one_demention_conv(self, df: pl.DataFrame):
-        import torch
-        import torch.nn as nn
-        import numpy as np
-        import polars as pl
+
 
         # ===== 元特徴量取得 =====
         X = df.select(self.original_base_cols).to_numpy().astype("float32")
