@@ -12,6 +12,9 @@ xgboost==2.0.3
 optuna==3.6.1
 torch==2.2.2
 
+#shap
+shap==0.44.1
+
 # data
 polars==0.20.31
 pyarrow==15.0.2
