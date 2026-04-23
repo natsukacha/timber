@@ -12,7 +12,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
-
+from sklearn.model_selection import GroupKFold
 
 
 class MoisturePipeline:
@@ -46,55 +46,47 @@ class MoisturePipeline:
     
 
 
+
+
     def fit(self, train_df: pl.DataFrame):
 
-        # ===== 特徴量生成 =====
         self.fe.fit(train_df)
         train_df = self.fe.transform(train_df)
 
         self.feature_cols = self.fe.feature_cols
 
-        # ===== X =====
         X = train_df.select(self.feature_cols).to_numpy().astype("float32")
-
-        # ===== y（log変換）=====
         y_raw = train_df["含水率"].to_numpy()
         y = np.log1p(y_raw)
 
-        # ===== KFold =====
-        kf = KFold(n_splits=5, shuffle=True, random_state=42)
+        # ここが重要
+        groups = train_df["樹種"].to_numpy()
+
+        gkf = GroupKFold(n_splits=5)
 
         rmses = []
 
-        for fold, (train_idx, valid_idx) in enumerate(kf.split(X)):
+        for fold, (train_idx, valid_idx) in enumerate(gkf.split(X, y, groups)):
+
             X_train, X_valid = X[train_idx], X[valid_idx]
             y_train, y_valid = y[train_idx], y[valid_idx]
 
-            # ===== 学習 =====
             model = LGBMRegressor(**self.params)
             model.fit(X_train, y_train)
 
-            # ===== 予測 =====
             pred_log = model.predict(X_valid)
 
-            # ===== 元スケール評価 =====
             pred = np.expm1(pred_log)
             y_valid_raw = np.expm1(y_valid)
 
             rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
             rmses.append(rmse)
 
-            print(f"fold {fold}: RMSE={rmse:.4f}")
+            print(f"Fold {fold}: RMSE = {rmse:.4f}")
 
-        # ===== CV平均 =====
-        mean_rmse = np.mean(rmses)
-        print(f"CV RMSE: {mean_rmse:.4f}")
+        self.model = model  # 最後のfold（or後で全データ学習）
 
-        # ===== 最終モデル（全データで再学習）=====
-        self.model = LGBMRegressor(**self.params)
-        self.model.fit(X, y)
-
-        return mean_rmse
+        return np.mean(rmses)
 
     def preprocess(self, df: pl.DataFrame):
         # ===== 必須チェック =====
