@@ -1,7 +1,4 @@
-
-import utils
-import FeatureEnginner
-import MoisturePipeline
+import mlflow
 
 class FullPipelineModel(mlflow.pyfunc.PythonModel):
 
