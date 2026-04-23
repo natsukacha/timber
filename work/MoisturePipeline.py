@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 
 
+
 class MoisturePipeline:
     def __init__(self,params=None,use_diff=False,use_pca=False,
     use_conv=False,use_band=False,use_sg=False):
@@ -44,12 +45,12 @@ class MoisturePipeline:
         self.feature_cols = None  
     
 
+
     def fit(self, train_df: pl.DataFrame):
+
         # ===== 特徴量生成 =====
         self.fe.fit(train_df)
         train_df = self.fe.transform(train_df)
-        # ===== 特徴量を確定 =====
-        cols_to_drop = [c for c in self.drop_cols if c in train_df.columns]+["species number"]
 
         self.feature_cols = self.fe.feature_cols
 
@@ -58,27 +59,42 @@ class MoisturePipeline:
 
         # ===== y（log変換）=====
         y_raw = train_df["含水率"].to_numpy()
-        y = np.log1p(y_raw)  # ← ここが変更点
+        y = np.log1p(y_raw)
 
-        # ===== 分割 =====
-        X_train, X_valid, y_train, y_valid = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        # ===== KFold =====
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
 
-        # ===== 学習 =====
+        rmses = []
+
+        for fold, (train_idx, valid_idx) in enumerate(kf.split(X)):
+            X_train, X_valid = X[train_idx], X[valid_idx]
+            y_train, y_valid = y[train_idx], y[valid_idx]
+
+            # ===== 学習 =====
+            model = LGBMRegressor(**self.params)
+            model.fit(X_train, y_train)
+
+            # ===== 予測 =====
+            pred_log = model.predict(X_valid)
+
+            # ===== 元スケール評価 =====
+            pred = np.expm1(pred_log)
+            y_valid_raw = np.expm1(y_valid)
+
+            rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
+            rmses.append(rmse)
+
+            print(f"fold {fold}: RMSE={rmse:.4f}")
+
+        # ===== CV平均 =====
+        mean_rmse = np.mean(rmses)
+        print(f"CV RMSE: {mean_rmse:.4f}")
+
+        # ===== 最終モデル（全データで再学習）=====
         self.model = LGBMRegressor(**self.params)
-        self.model.fit(X_train, y_train)
+        self.model.fit(X, y)
 
-        # ===== 評価（log空間で）=====
-        pred_log = self.model.predict(X_valid)
-
-        # 元スケールに戻して評価（重要）
-        pred = np.expm1(pred_log)
-        y_valid_raw = np.expm1(y_valid)
-
-        rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
-
-        return rmse
+        return mean_rmse
 
     def preprocess(self, df: pl.DataFrame):
         # ===== 必須チェック =====

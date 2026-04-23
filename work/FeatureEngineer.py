@@ -114,7 +114,7 @@ class FeatureEngineer:
 
     
 
-    def apply_sg(self, df, window=11, poly=2, deriv=1):
+    def apply_sg(self, df, window=100, poly=2, deriv=1):
         X = df.select(self.original_base_cols).to_numpy()
 
         X_sg = savgol_filter(
@@ -129,7 +129,7 @@ class FeatureEngineer:
 
         sg_df = pl.DataFrame(X_sg, schema=sg_cols)
 
-        self.sg_cols = sg_cols
+        self.sg_feature_cols = sg_cols
 
         df = pl.concat([df, sg_df], how="horizontal")
 
@@ -245,6 +245,7 @@ class FeatureEngineer:
             df = self._apply_band_feature(df)
 
         if self.use_sg:
+            #if not all(col in df.columns for col in self.sg_feature_cols):
             df = self.apply_sg(df)
 
         # 列チェック
