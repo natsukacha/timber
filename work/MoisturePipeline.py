@@ -10,6 +10,7 @@ from lightgbm import LGBMRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 from sklearn.model_selection import GroupKFold
@@ -17,12 +18,13 @@ from sklearn.model_selection import GroupKFold
 
 class MoisturePipeline:
     def __init__(self,params=None,use_diff=False,use_pca=False,
-    use_conv=False,use_band=False,use_sg=False):
+    use_conv=False,use_band=False,use_sg=False,model_type="LGBMRegressor"):
         self.use_diff = use_diff
         self.use_conv = use_conv
         self.use_band = use_band  
         self.use_pca = use_pca
         self.use_sg = use_sg
+        self.model_type = model_type
 
 
         self.params = params or {
@@ -71,22 +73,45 @@ class MoisturePipeline:
             X_train, X_valid = X[train_idx], X[valid_idx]
             y_train, y_valid = y[train_idx], y[valid_idx]
 
-            model = LGBMRegressor(**self.params)
-            model.fit(X_train, y_train)
+            if self.model_type == "LGBMRegressor":
+                # lgbm #
+                model = LGBMRegressor(**self.params)
+                model.fit(X_train, y_train)
 
-            pred_log = model.predict(X_valid)
+                pred_log = model.predict(X_valid)
 
-            pred = np.expm1(pred_log)
-            y_valid_raw = np.expm1(y_valid)
+                pred = np.expm1(pred_log)
+                y_valid_raw = np.expm1(y_valid)
 
-            rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
-            rmses.append(rmse)
+                rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
+                rmses.append(rmse)
+
+            elif  self.model_type == "PLSRegression":
+                #PLS#
+                model = PLSRegression(n_components=3)
+
+                model.fit(X_train, y_train)
+
+                pred_log = model.predict(X_valid).ravel()
+
+                pred = np.expm1(pred_log)
+                y_valid_raw = np.expm1(y_valid)
+
+                rmse = np.sqrt(mean_squared_error(y_valid_raw, pred))
+                rmses.append(rmse)
+
+
+            else:
+                raise ValueError("model_type is invalid")
+            
+
 
             print(f"Fold {fold}: RMSE = {rmse:.4f}")
 
         self.model = model  # 最後のfold（or後で全データ学習）
 
-        return np.mean(rmses)
+        return float(np.mean(rmses))
+
 
     def preprocess(self, df: pl.DataFrame):
         # ===== 必須チェック =====
@@ -116,7 +141,7 @@ class MoisturePipeline:
         """
         実行管理（MLflow）
         """
-        mlflow.set_tracking_uri("http://mlflow:5000")
+        mlflow.set_tracking_uri("http://localhost:5000")
 
         with mlflow.start_run():
 
